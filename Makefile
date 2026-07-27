@@ -289,7 +289,13 @@ companion-iphone: force
 open: Development
 	open -W -n "$(BUILD_DIR)/Development/iTerm2.app" --args -suite $(notdir $(CURDIR))
 
+# run/runbg: strip Claude Code's child-session markers before launching the dev
+# app, so it (and every terminal tab it opens) is NOT treated as a nested Claude
+# session. Without this, launching `make run` from inside a Claude Code session
+# leaks CLAUDE_CODE_CHILD_SESSION into the app -> every tab's claude disables
+# transcript saving. `unset` is a no-op when the vars are already absent.
 run: Development
+	unset CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_SESSION_ID; \
 	"$(BUILD_DIR)/Development/iTerm2.app/Contents/MacOS/iTerm2" -suite $(notdir $(CURDIR)) & \
 	pid=$$!; \
 	trap 'kill $$pid 2>/dev/null' INT TERM; \
@@ -297,6 +303,7 @@ run: Development
 	wait $$pid
 
 runbg: Development
+	unset CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_SESSION_ID; \
 	"$(BUILD_DIR)/Development/iTerm2.app/Contents/MacOS/iTerm2" -suite $(notdir $(CURDIR)) & \
 	pid=$$!; \
 	trap 'kill $$pid 2>/dev/null' INT TERM; \
