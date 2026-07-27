@@ -102,14 +102,18 @@ enum WorkgroupPresets {
             // refuses it ("/dev/null is not a file", blocking on Press ENTER).
             // The inline sh wrapper swaps any /dev/null side for an empty temp
             // file before exec'ing vimdiff; two real sides behave as before.
-            command: "git difftool -y -x 'sh -c '\\''l=\"$1\"; r=\"$2\"; [ \"$l\" = /dev/null ] && l=\"$(mktemp)\"; [ \"$r\" = /dev/null ] && r=\"$(mktemp)\"; exec vimdiff \"$l\" \"$r\"'\\'' sh' \\(gitBase)",
+            // `--cmd "set shortmess+=F"` suppresses vimdiff's per-file "N lines,
+            // N bytes" load messages, which otherwise overflow the one-line
+            // cmdline and pause on a "Press ENTER to continue" prompt every time
+            // a file is selected in the Diff pane.
+            command: "git difftool -y -x 'sh -c '\\''l=\"$1\"; r=\"$2\"; [ \"$l\" = /dev/null ] && l=\"$(mktemp)\"; [ \"$r\" = /dev/null ] && r=\"$(mktemp)\"; exec vimdiff --cmd \"set shortmess+=F\" \"$l\" \"$r\"'\\'' sh' \\(gitBase)",
             urlString: "",
             toolbarItems: [.modeSwitcher,
                            .changedFileSelector,
                            .gitBaseSelector,
                            .navigation(WorkgroupNavigationShortcuts.defaults)],
             displayName: "Diff",
-            perFileCommand: "git difftool -y -x 'sh -c '\\''l=\"$1\"; r=\"$2\"; [ \"$l\" = /dev/null ] && l=\"$(mktemp)\"; [ \"$r\" = /dev/null ] && r=\"$(mktemp)\"; exec vimdiff \"$l\" \"$r\"'\\'' sh' \\(gitBase) -- \\(file)",
+            perFileCommand: "git difftool -y -x 'sh -c '\\''l=\"$1\"; r=\"$2\"; [ \"$l\" = /dev/null ] && l=\"$(mktemp)\"; [ \"$r\" = /dev/null ] && r=\"$(mktemp)\"; exec vimdiff --cmd \"set shortmess+=F\" \"$l\" \"$r\"'\\'' sh' \\(gitBase) -- \\(file)",
             mode: .diff)
 
         let review = iTermWorkgroupSessionConfig(
