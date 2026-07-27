@@ -130,6 +130,75 @@ Deeper reading: [`design.md`](it2agent/docs/design.md) ·
 
 ---
 
+## Development build (`make run`)
+
+Build and launch the development app (the "dev build" the live tests need):
+
+```sh
+make run          # build the Development config, then launch it
+make Development   # build only (no launch)
+tools/build.sh     # build a debug build; logs to tmp/build.log, prints only errors/warnings
+```
+
+### Where the built binary lives
+
+`make` builds into xcodebuild's `SYMROOT`, which is Xcode's per-project **DerivedData**
+directory — NOT inside this repo. The app bundle is:
+
+```
+$SYMROOT/Development/iTerm2.app
+# i.e. ~/Library/Developer/Xcode/DerivedData/iTerm2-<hash>/Build/Products/Development/iTerm2.app
+```
+
+The `<hash>` is assigned by Xcode per project location, so resolve it rather than hard-coding it:
+
+```sh
+# the SYMROOT make uses (same value the Makefile computes for BUILD_DIR):
+xcodebuild -scheme iTerm2 -showBuildSettings 2>/dev/null | awk -F ' = ' '/^ *SYMROOT/{print $2; exit}'
+# the launchable binary:
+"$(xcodebuild -scheme iTerm2 -showBuildSettings 2>/dev/null | awk -F ' = ' '/^ *SYMROOT/{print $2; exit}')/Development/iTerm2.app/Contents/MacOS/iTerm2"
+```
+
+Override the location with `make BUILD_DIR=/path/to/dir run`. (Stale DerivedData dirs from earlier
+builds may linger; the *active* one is whatever `-showBuildSettings` reports.)
+
+### Why the dev build does NOT load your normal iTerm2 profile
+
+`make run` launches the binary with **`-suite <repo-dir-name>`** (e.g. `-suite spawnterm`) — a
+**separate NSUserDefaults preferences domain**, on purpose, so the dev build never reads or writes
+your real iTerm2 settings (`com.googlecode.iterm2`). Consequences:
+
+- The dev build starts with a **fresh, default profile** (default font `Monaco 12`, no custom
+  colors). If your prompt uses a Nerd Font / powerline glyphs, they render as `?` boxes because the
+  default font lacks them — this is expected, not a bug.
+- Editing settings inside the dev build only touches the isolated `spawnterm` suite; your installed
+  iTerm2 is untouched.
+
+**To make the dev build use the profile you use in your installed iTerm2**, seed the isolated suite
+with a one-time copy of your real prefs, then (re)launch:
+
+```sh
+defaults export com.googlecode.iterm2 - | defaults import spawnterm -   # copy real prefs -> dev suite
+make run                                                                # relaunch; now shows your fonts/colors/profiles
+```
+
+This stays isolated: after the copy, the two domains are independent, so changes in the dev build
+still never touch your real config.
+
+**Alternative (not recommended):** launch the binary directly **without** `-suite` so it reads your
+real `com.googlecode.iterm2` domain live — but then the dev build can read/write and clobber your
+installed iTerm2 settings, which is exactly what the `-suite` isolation prevents:
+
+```sh
+"$(xcodebuild -scheme iTerm2 -showBuildSettings 2>/dev/null | awk -F ' = ' '/^ *SYMROOT/{print $2; exit}')/Development/iTerm2.app/Contents/MacOS/iTerm2"
+```
+
+Note: the dev build and your installed iTerm share the bundle id `com.googlecode.iterm2`; launch the
+binary **directly** (as above / as `make run` does) rather than via `open`, so you get a distinct
+dev process instead of just activating the installed app.
+
+---
+
 ## Testing
 
 Two layers. The **pure/gate layer** needs no running terminal; the **live layer** drives a real
