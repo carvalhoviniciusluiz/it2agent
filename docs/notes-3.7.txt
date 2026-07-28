@@ -2407,3 +2407,14 @@ Bug Fixes:
   are always preserved) and can cap handoff
   history per agent/goal, and "vacuum" reclaims
   the freed space on disk.
+- it2agent spawn now launches the agent command
+  in an interactive login shell, so your
+  interactive PATH (e.g. ~/.local/bin, where
+  claude and the it2agent wrappers live) is in
+  effect. Previously the boot ran in a
+  non-interactive login shell that skipped
+  .zshrc, so a bare "claude" could die with
+  "command not found" while spawn still reported
+  success. Spawn now also preflights the agent
+  command in that same shell and aborts with a
+  clear message instead of opening a dead tab.

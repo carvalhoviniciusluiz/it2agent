@@ -263,6 +263,30 @@ case "$cc_none" in
 esac
 
 echo
+echo "--- 6f. interactive-login delivery + agent-command preflight (bug: command not found: claude) ---"
+# Fix A: the boot runs in an INTERACTIVE login shell (-ilc / -il), not the old
+# non-interactive -lc / -l. Interactive sources .zshrc, so ~/.local/bin (where
+# claude and the it2agent CLIs live) is on PATH and the agent command resolves.
+deliv_login="$(sh "$SPAWN" --role x --dry-run -- true)"
+assert_contains "delivery uses interactive login (-ilc)" '-ilc "'   "$deliv_login"
+assert_contains "trailing shell is interactive login (-il)" '-il"'  "$deliv_login"
+case "$deliv_login" in
+	*'-lc "'*) red "delivery still uses non-interactive login (-lc) — .zshrc not sourced" ;;
+	*)         green "delivery no longer uses non-interactive -lc" ;;
+esac
+# Fix B: preflight resolves the agent command in that SAME login shell. Dry-run
+# only REPORTS; it never opens a tab, so a resolvable and an unresolvable command
+# both exit 0 here but print opposite verdicts.
+pf_yes="$(sh "$SPAWN" --role x --dry-run -- /usr/bin/true)"
+assert_contains "preflight: resolvable command reports yes" "resolves in login shell? yes" "$pf_yes"
+pf_no="$(sh "$SPAWN" --role x --dry-run -- it2agent-nonexistent-xyz-123)"
+assert_contains "preflight: unresolvable command reports no" "resolves in login shell? no" "$pf_no"
+# Outside --dry-run, an unresolvable agent command ABORTS (exit 2) instead of
+# opening a doomed tab and falsely reporting success. It dies before osascript,
+# so this is safe to run headless (no tab is ever created).
+assert_exit "preflight aborts unresolved command (exit 2)" 2 sh "$SPAWN" --role x -- it2agent-nonexistent-xyz-123
+
+echo
 echo "--- 6. generated AppleScript parses ---"
 if command -v osacompile >/dev/null 2>&1; then
 	AS_FILE="$(mktemp).applescript"
