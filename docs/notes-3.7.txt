@@ -2429,3 +2429,11 @@ Bug Fixes:
   idempotent. it2agent uninstall unregisters it
   (leaving the flag as-is), and --no-hook on
   either opts out.
+- cc-status no longer surfaces a best-effort
+  status-update failure as a Claude Code
+  "SessionStart hook error". A transient it2
+  hiccup (the session not yet registered in the
+  API at session start, or a stale socket under
+  a -suite dev build) is now silent: the native
+  status just skips that update, as it already
+  did for the background-task count.
