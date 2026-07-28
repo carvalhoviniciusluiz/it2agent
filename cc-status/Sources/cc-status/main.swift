@@ -214,16 +214,20 @@ let it2 = resolveIt2()
 let process = Process()
 process.executableURL = it2.executable
 process.arguments = it2.leadingArgs + it2Args
+// Best-effort: this hook only updates the tab's native status. Stay SILENT on
+// failure — route it2's own stderr to null and never write our own diagnostic to
+// stderr — so a transient it2 hiccup (e.g. the session not yet registered in the
+// API at SessionStart, or a stale/other-instance socket under a -suite dev build)
+// is not surfaced by Claude Code as a "SessionStart hook error". A failed status
+// update is invisible to the user by design; cc-status always exits 0 regardless.
+// Mirrors storedBackgroundTaskCount, which already reads silently via nullDevice.
+process.standardError = FileHandle.nullDevice
 do {
     try process.run()
 } catch {
-    FileHandle.standardError.write(Data("cc-status: failed to run it2: \(error)\n".utf8))
     exit(0)
 }
 process.waitUntilExit()
-if process.terminationStatus != 0 {
-    FileHandle.standardError.write(Data("cc-status: it2 exited \(process.terminationStatus) for \(eventName)\n".utf8))
-}
 
 // MARK: - it2 resolution
 
