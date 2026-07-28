@@ -200,6 +200,15 @@ class TestInstallUserScope(unittest.TestCase):
         cmd = data["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         self.assertTrue(cmd.endswith("it2agent-autobrief-hook session-start"))
 
+    def test_user_scope_registers_bare_name_for_portability(self):
+        # --scope user registers the BARE wrapper name (no absolute path) so the
+        # ~/.claude entry is relocation-proof: it resolves via PATH from the
+        # ~/.local/bin wrapper on any machine and from any git worktree.
+        self.assertEqual(hook.cmd_install(scope="user"), 0)
+        cmd = self._read()["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        self.assertEqual(cmd, "it2agent-autobrief-hook session-start")
+        self.assertNotIn("/", cmd)
+
     def test_install_preserves_unrelated_keys(self):
         pre = {
             "model": "opus",

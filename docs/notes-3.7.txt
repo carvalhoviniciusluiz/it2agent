@@ -2418,3 +2418,14 @@ Bug Fixes:
   success. Spawn now also preflights the agent
   command in that same shell and aborts with a
   clear message instead of opening a dead tab.
+- it2agent install now also registers the
+  autobrief discovery hook at user scope
+  (~/.claude/settings.json) and enables
+  agent.autobrief, so a fresh Claude Code
+  session in any project, worktree, or machine
+  self-discovers the it2agent agentic layer. The
+  hook uses a portable bare-name command and is
+  inert until the flag is on; both steps are
+  idempotent. it2agent uninstall unregisters it
+  (leaving the flag as-is), and --no-hook on
+  either opts out.

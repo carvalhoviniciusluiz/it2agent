@@ -22,7 +22,15 @@ Usage:
   $PROG [--dir <bindir>]   Create/update a wrapper in <bindir> (default
                            ~/.local/bin) for each it2agent CLI in this repo.
   $PROG --list             Print the CLIs that would be wrapped, then exit.
+  $PROG --no-hook          Skip registering the autobrief discovery hook and
+                           enabling agent.autobrief (only install the wrappers).
   $PROG -h | --help        Show this help.
+
+By default, after installing the wrappers, $PROG also registers the it2agent
+autobrief discovery hook at USER scope (~/.claude/settings.json) and enables
+agent.autobrief, so a fresh Claude Code session in any project/worktree/machine
+self-discovers the it2agent agentic layer. The hook is inert until the flag is
+ON, both steps are idempotent, and --no-hook opts out.
 
 Idempotent: re-running rewrites wrappers in place (never duplicates). Creates
 <bindir> if missing and, when it is not on \$PATH, prints how to add it.
@@ -42,12 +50,14 @@ fi
 
 BINDIR="$HOME/.local/bin"
 LIST_ONLY=0
+INSTALL_HOOK=1   # also register the autobrief discovery hook (user scope) + enable it; --no-hook skips
 
 # --- parse args --------------------------------------------------------------
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		-h|--help) usage; exit 0 ;;
 		--list) LIST_ONLY=1; shift ;;
+		--no-hook) INSTALL_HOOK=0; shift ;;
 		--dir)
 			if [ "$#" -lt 2 ]; then
 				printf '%s: --dir requires an argument\n' "$PROG" >&2
@@ -108,6 +118,32 @@ done < "$tmpf"
 rm -f "$tmpf"
 
 printf 'Installed %s wrapper(s).\n' "$count"
+
+# --- autobrief discovery hook (user scope) + gate ----------------------------
+# So a fresh Claude Code session in ANY project/worktree/machine discovers the
+# it2agent agentic layer, register the autobrief SessionStart hook at USER scope
+# (~/.claude/settings.json, a bare-name command that resolves via the wrapper we
+# just installed) and enable agent.autobrief so it actually fires. Both are
+# idempotent and the hook is inert until the flag is ON, so this is safe by
+# default; --no-hook opts out. Failures are non-fatal (the wrappers still stand).
+if [ "$INSTALL_HOOK" -eq 1 ]; then
+	AB_HOOK="$ROOT/autobrief/it2agent-autobrief-hook"
+	AB_FLAG="$ROOT/flags/it2agent-flag"
+	if [ -x "$AB_HOOK" ]; then
+		if "$AB_HOOK" install --scope user >/dev/null 2>&1; then
+			printf 'Registered autobrief discovery hook (SessionStart, user scope).\n'
+		else
+			printf '%s: note: could not register the autobrief hook (skipped).\n' "$PROG" >&2
+		fi
+	fi
+	if [ -x "$AB_FLAG" ]; then
+		if "$AB_FLAG" enable agent.autobrief >/dev/null 2>&1; then
+			printf 'Enabled agent.autobrief (fresh agents self-discover it2agent).\n'
+		else
+			printf '%s: note: could not enable agent.autobrief (skipped).\n' "$PROG" >&2
+		fi
+	fi
+fi
 
 # --- PATH advice -------------------------------------------------------------
 case ":${PATH:-}:" in

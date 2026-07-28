@@ -162,8 +162,21 @@ def _wrapper_command_path() -> str:
     return str(Path(__file__).resolve().parent / PROG)
 
 
-def _events_for_install() -> dict[str, str]:
-    base = _wrapper_command_path()
+def _command_base_for_scope(scope: str) -> str:
+    """Base command written into settings.json for the hook.
+
+    ``user`` scope registers the BARE wrapper name (``it2agent-autobrief-hook``),
+    resolved via PATH from the ~/.local/bin wrapper that ``it2agent install``
+    creates. That makes the hook relocation-proof: the same ~/.claude entry works
+    on any machine and from any git worktree, regardless of where the checkout
+    lives. ``project`` scope keeps the absolute checkout path (a known,
+    machine-local .claude/settings.local.json).
+    """
+    return PROG if scope == "user" else _wrapper_command_path()
+
+
+def _events_for_install(scope: str) -> dict[str, str]:
+    base = _command_base_for_scope(scope)
     return {event: f"{base} {verb}" for event, verb in HOOK_EVENTS.items()}
 
 
@@ -176,7 +189,7 @@ def cmd_install(scope: str = "project", start_dir: Optional[Path] = None) -> int
         _err(str(exc))
         return 2
     settings = cs.load_settings(path)
-    cs.install_event_hooks(settings, _events_for_install(), PROG)
+    cs.install_event_hooks(settings, _events_for_install(scope), PROG)
     cs.write_settings(path, settings)
     print(f"Installed it2agent autobrief hook into {path}")
     print("Registered: SessionStart")

@@ -128,6 +128,16 @@ class ClaudeCodeOnboarding: NSObject {
             iTermUserDefaults.claudeCodeHooksInstalled = false
             return .success
         }
+
+        // Symmetric to install: also remove the it2agent autobrief discovery hook
+        // from ~/.claude/settings.json (best-effort, via its CLI), before the
+        // cc-status edit below. Both touch the same file sequentially. The
+        // agent.autobrief flag is intentionally left as-is (uninstalling the
+        // integration should not rewrite the user's feature config).
+        if iTermAgentCapabilities.autobriefDiscoveryHookAvailable() {
+            iTermAgentCapabilities.setAutobriefDiscoveryHookInstalledUserScope(false)
+        }
+
         let data: Data
         do {
             data = try Data(contentsOf: settingsURL)
@@ -465,6 +475,30 @@ class ClaudeCodeOnboarding: NSObject {
                 if ok { break }
             }
             if !ok { return false }
+        }
+
+        // Also require the it2agent autobrief discovery hook on SessionStart when
+        // its CLI is available — the integration installs it alongside cc-status,
+        // so the health monitor self-heals it too (doInstallHook is idempotent
+        // and re-adds it). When the CLI is NOT installed the hook is not natively
+        // installable, so its absence must NOT be treated as a broken install
+        // (guards against a reinstall-nag loop on a machine without the CLIs).
+        var autobriefPresent = false
+        if let sessionStartGroups = hooks["SessionStart"] as? [[String: Any]] {
+            outer: for group in sessionStartGroups {
+                guard let entries = group["hooks"] as? [[String: Any]] else { continue }
+                for entry in entries {
+                    if let command = entry["command"] as? String,
+                       command.contains("it2agent-autobrief-hook") {
+                        autobriefPresent = true
+                        break outer
+                    }
+                }
+            }
+        }
+        if !autobriefPresent && iTermAgentCapabilities.autobriefDiscoveryHookAvailable() {
+            DLog("Onboarding: autobrief discovery hook missing while its CLI is available — integration needs reinstall")
+            return false
         }
         return true
     }
@@ -1391,6 +1425,22 @@ class ClaudeCodeOnboarding: NSObject {
             alert.runModal()
             return false
         }
+
+        // Also install the it2agent autobrief discovery hook at USER scope and
+        // enable its gate, so a fresh Claude Code session in any project,
+        // worktree, or machine self-discovers the agentic layer alongside
+        // cc-status. Sequential and best-effort: the CLI deep-merges its own
+        // SessionStart entry into the settings.json we just wrote (preserving
+        // cc-status). A no-op when the it2agent CLIs are not installed — the
+        // absence is not treated as a broken integration (see the health check).
+        if iTermAgentCapabilities.autobriefDiscoveryHookAvailable() {
+            iTermAgentCapabilities.setAutobriefDiscoveryHookInstalledUserScope(true)
+            iTermAgentCapabilities.setEnabled(true, forCapability: "autobrief")
+            RLog("Onboarding: installed autobrief discovery hook (user scope) + enabled agent.autobrief")
+        } else {
+            DLog("Onboarding: autobrief hook CLI unavailable; skipped discovery-hook install")
+        }
+
         iTermUserDefaults.claudeCodeHooksInstalled = true
         // Sticky "user once completed setup" flag — distinct from the
         // disk-reconciled cache above. Drives broken-install detection
