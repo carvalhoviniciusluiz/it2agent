@@ -22,6 +22,15 @@ static NSString *const iTermAgentTeamHookToolName = @"it2agent-team-hook";
 static NSString *const iTermAgentTeamHookPathUserDefaultsKey = @"NoSyncIT2AgentTeamHookPath";
 static NSString *const iTermAgentTeamHookEnvironmentVariable = @"IT2AGENT_TEAM_HOOK";
 
+// The autobrief discovery hook is installed at USER scope
+// (~/.claude/settings.json) via it2agent-autobrief-hook so a fresh Claude Code
+// session in any project, worktree, or machine self-discovers the it2agent
+// agentic layer. The native Claude Code integration installs/self-heals it
+// alongside cc-status; see ClaudeCodeOnboarding.
+static NSString *const iTermAgentAutobriefHookToolName = @"it2agent-autobrief-hook";
+static NSString *const iTermAgentAutobriefHookPathUserDefaultsKey = @"NoSyncIT2AgentAutobriefHookPath";
+static NSString *const iTermAgentAutobriefHookEnvironmentVariable = @"IT2AGENT_AUTOBRIEF_HOOK";
+
 @implementation iTermAgentCapabilities
 
 + (NSArray<NSString *> *)capabilityIdentifiers {
@@ -187,6 +196,15 @@ static NSString *const iTermAgentTeamHookEnvironmentVariable = @"IT2AGENT_TEAM_H
     return [self executablePathForTool:iTermAgentTeamHookToolName
                                 envVar:iTermAgentTeamHookEnvironmentVariable
                        userDefaultsKey:iTermAgentTeamHookPathUserDefaultsKey];
+}
+
+// Convenience accessor for it2agent-autobrief-hook (user-scope discovery hook).
+// Same resolver as it2agent-flag / it2agent-team-hook, so env → NoSync default →
+// login-shell `command -v` → common install locations (incl. ~/.local/bin) apply.
++ (nullable NSString *)autobriefHookExecutablePath {
+    return [self executablePathForTool:iTermAgentAutobriefHookToolName
+                                envVar:iTermAgentAutobriefHookEnvironmentVariable
+                       userDefaultsKey:iTermAgentAutobriefHookPathUserDefaultsKey];
 }
 
 + (nullable NSString *)resolveExecutablePathForTool:(NSString *)tool
@@ -452,6 +470,43 @@ static BOOL sCacheLoaded = NO;
               directory:directory
              exitStatus:&status];
     DLog(@"it2agent-team-hook %@ --scope project (cwd=%@) exited %d", subcommand, directory, status);
+}
+
+#pragma mark - Autobrief discovery hook (user scope)
+
++ (BOOL)autobriefDiscoveryHookAvailable {
+    return [self autobriefHookExecutablePath] != nil;
+}
+
++ (BOOL)autobriefDiscoveryHookInstalledUserScope {
+    NSString *hookPath = [self autobriefHookExecutablePath];
+    if (!hookPath) {
+        return NO;
+    }
+    int status = -1;
+    // `status --scope user`: 0 = our hook is present in ~/.claude/settings.json,
+    // 1 = absent. Anything else (launch failure) is treated as "not installed".
+    [self runExecutable:hookPath
+              arguments:@[ @"status", @"--scope", @"user" ]
+             exitStatus:&status];
+    return status == 0;
+}
+
++ (void)setAutobriefDiscoveryHookInstalledUserScope:(BOOL)installed {
+    NSString *hookPath = [self autobriefHookExecutablePath];
+    if (!hookPath) {
+        DLog(@"Skipping autobrief hook %@: it2agent-autobrief-hook unavailable",
+             installed ? @"install" : @"uninstall");
+        return;
+    }
+    NSString *subcommand = installed ? @"install" : @"uninstall";
+    int status = -1;
+    // Best-effort: runExecutable: is exception-safe and returns nil on launch
+    // failure, so a missing tool or a write error never throws into the caller.
+    [self runExecutable:hookPath
+              arguments:@[ subcommand, @"--scope", @"user" ]
+             exitStatus:&status];
+    DLog(@"it2agent-autobrief-hook %@ --scope user exited %d", subcommand, status);
 }
 
 @end

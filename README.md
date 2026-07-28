@@ -41,6 +41,11 @@ You need a working macOS build of the app plus the Python bits that drive it.
   it2agent install          # writes wrappers into ~/.local/bin (override with --dir)
   ```
   From a fresh checkout, run it via the bundled dispatcher: `it2agent/it2agent install`.
+  By default this also registers the **autobrief discovery hook** at user scope
+  (`~/.claude/settings.json`, a portable bare-name command) and enables `agent.autobrief`,
+  so a fresh Claude Code session in **any project, worktree, or machine** self-discovers the
+  it2agent agentic layer. The hook is inert until the flag is on, and both steps are
+  idempotent. Pass `--no-hook` to install only the wrappers.
 - **Enable the native Claude Code integration** for the cooperation surfaces (operator / GUI step):
   in the running app, **menu → Install/Reinstall Claude Code Integration → Install Hook**.
 

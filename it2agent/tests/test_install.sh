@@ -43,6 +43,10 @@ assert_exit() {
 WORK="$(mktemp -d)"
 BINDIR="$WORK/bin"
 export IT2AGENT_CONFIG="$WORK/config.toml"
+# install now also registers the autobrief hook at USER scope + enables the flag.
+# Redirect BOTH the Claude settings target and the flag config into the workspace
+# so the suite NEVER touches the operator's real ~/.claude or ~/.config/it2agent.
+export IT2AGENT_CLAUDE_SETTINGS="$WORK/settings.json"
 unset IT2AGENT_FORCE
 FIXTURE=""
 cleanup() {
@@ -140,6 +144,43 @@ assert_contains "it2agent install delegates to it2agent-install" "Installed" "$u
 assert_exit "it2agent uninstall exits 0" 0 sh "$UMBRELLA" uninstall --dir "$BINDIR"
 assert_exit "install -h exits 0" 0 sh "$INSTALL" -h
 assert_exit "install bad arg exits 2" 2 sh "$INSTALL" --bogus
+
+echo
+echo "--- 7. autobrief discovery hook fold-in (user scope, default-on) ---"
+# Hermetic sub-scenario with its own settings + flag config. install should
+# register the autobrief SessionStart hook at USER scope with the BARE wrapper
+# name (portable), preserve a pre-existing cc-status hook, and enable the flag.
+S7="$WORK/s7"; mkdir -p "$S7"
+S7_SET="$S7/settings.json"; S7_CFG="$S7/config.toml"; S7_BIN="$S7/bin"
+printf '%s\n' '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"/x/cc-status"}]}]}}' > "$S7_SET"
+_s7_cmds() { python3 -c "import json,sys;d=json.load(open('$S7_SET'));print('\n'.join(h['command'] for g in d['hooks'].get('SessionStart',[]) for h in g['hooks']))"; }
+IT2AGENT_CLAUDE_SETTINGS="$S7_SET" IT2AGENT_CONFIG="$S7_CFG" "$INSTALL" --dir "$S7_BIN" >/dev/null 2>&1
+s7_cmds="$(_s7_cmds)"
+assert_contains "install registers the autobrief hook (session-start)" "it2agent-autobrief-hook session-start" "$s7_cmds"
+case "$s7_cmds" in
+	*/it2agent-autobrief-hook*) red "user-scope hook used an ABSOLUTE path (should be the bare, portable name)" ;;
+	*)                          green "user-scope hook command is the bare name (relocation-proof)" ;;
+esac
+assert_contains "install preserves a pre-existing cc-status hook" "/x/cc-status" "$s7_cmds"
+assert_contains "install enables agent.autobrief" '"agent.autobrief" = true' "$(cat "$S7_CFG")"
+# Idempotent: a second install leaves settings byte-identical.
+cp "$S7_SET" "$S7/before"
+IT2AGENT_CLAUDE_SETTINGS="$S7_SET" IT2AGENT_CONFIG="$S7_CFG" "$INSTALL" --dir "$S7_BIN" >/dev/null 2>&1
+if cmp -s "$S7/before" "$S7_SET"; then green "second install leaves settings byte-identical"; else red "second install changed settings (not idempotent)"; fi
+# Uninstall removes ONLY our hook; cc-status survives; the flag is left untouched.
+IT2AGENT_CLAUDE_SETTINGS="$S7_SET" IT2AGENT_CONFIG="$S7_CFG" "$UNINSTALL" --dir "$S7_BIN" >/dev/null 2>&1
+s7_after="$(_s7_cmds)"
+case "$s7_after" in
+	*it2agent-autobrief-hook*) red "uninstall left the autobrief hook behind" ;;
+	*)                         green "uninstall removed the autobrief hook" ;;
+esac
+assert_contains "uninstall preserves the cc-status hook" "/x/cc-status" "$s7_after"
+assert_contains "uninstall leaves agent.autobrief untouched" '"agent.autobrief" = true' "$(cat "$S7_CFG")"
+# --no-hook opts out entirely: neither settings nor flag config is created.
+S7N="$WORK/s7n"; mkdir -p "$S7N"
+IT2AGENT_CLAUDE_SETTINGS="$S7N/s.json" IT2AGENT_CONFIG="$S7N/c.toml" "$INSTALL" --dir "$S7N/bin" --no-hook >/dev/null 2>&1
+if [ ! -f "$S7N/s.json" ]; then green "--no-hook does not register the hook"; else red "--no-hook still wrote settings"; fi
+if [ ! -f "$S7N/c.toml" ]; then green "--no-hook does not enable the flag"; else red "--no-hook still wrote flag config"; fi
 
 echo
 echo "=== summary: $pass passed, $fail failed ==="

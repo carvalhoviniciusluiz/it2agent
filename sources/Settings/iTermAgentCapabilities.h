@@ -71,6 +71,27 @@ NS_ASSUME_NONNULL_BEGIN
 // team-bridge hook for `directory`. Never throws; failures are logged.
 + (void)setTeamBridgeInstalled:(BOOL)installed forDirectory:(NSString *)directory;
 
+#pragma mark - Autobrief discovery hook (user scope)
+
+// The autobrief SessionStart discovery hook, installed at USER scope
+// (~/.claude/settings.json via it2agent-autobrief-hook) so a fresh Claude Code
+// session in any project, worktree, or machine self-discovers the it2agent
+// agentic layer. The native Claude Code integration installs and self-heals it
+// alongside cc-status.
+
+// YES if it2agent-autobrief-hook is resolvable (so the app can act on the hook).
+// When NO, the hook is not natively installable and its absence must not be
+// treated as a broken integration.
++ (BOOL)autobriefDiscoveryHookAvailable;
+
+// YES if our autobrief hook is present in ~/.claude/settings.json. NO when it is
+// absent or the tool is unavailable.
++ (BOOL)autobriefDiscoveryHookInstalledUserScope;
+
+// Best-effort user-scoped install (installed=YES) or uninstall (NO) of the
+// autobrief discovery hook. Never throws; failures are logged.
++ (void)setAutobriefDiscoveryHookInstalledUserScope:(BOOL)installed;
+
 @end
 
 NS_ASSUME_NONNULL_END

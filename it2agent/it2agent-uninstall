@@ -19,7 +19,12 @@ Usage:
   $PROG [--dir <bindir>]   Remove wrappers in <bindir> (default ~/.local/bin)
                            whose target points into this repo. Only wrappers we
                            created are removed; unrelated files are left alone.
+  $PROG --no-hook          Do not unregister the autobrief discovery hook.
   $PROG -h | --help        Show this help.
+
+By default this also unregisters the it2agent autobrief SessionStart hook from
+~/.claude/settings.json (the bare-name command would otherwise dangle once the
+wrappers are gone). The agent.autobrief flag is left as-is. --no-hook opts out.
 EOF
 }
 
@@ -35,11 +40,13 @@ if [ -z "$ROOT" ]; then
 fi
 
 BINDIR="$HOME/.local/bin"
+UNINSTALL_HOOK=1   # also unregister the autobrief user-scope hook; --no-hook skips
 
 # --- parse args --------------------------------------------------------------
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		-h|--help) usage; exit 0 ;;
+		--no-hook) UNINSTALL_HOOK=0; shift ;;
 		--dir)
 			if [ "$#" -lt 2 ]; then
 				printf '%s: --dir requires an argument\n' "$PROG" >&2
@@ -81,3 +88,19 @@ for f in "$BINDIR"/*; do
 done
 
 printf 'Removed %s wrapper(s).\n' "$count"
+
+# --- autobrief discovery hook (user scope) -----------------------------------
+# Symmetric to install: unregister the autobrief SessionStart hook from
+# ~/.claude/settings.json so its bare-name command does not dangle now that the
+# wrapper is gone. The agent.autobrief flag is intentionally left untouched (a
+# wrapper uninstall should not rewrite the user's feature config). Non-fatal.
+if [ "$UNINSTALL_HOOK" -eq 1 ]; then
+	AB_HOOK="$ROOT/autobrief/it2agent-autobrief-hook"
+	if [ -x "$AB_HOOK" ]; then
+		if "$AB_HOOK" uninstall --scope user >/dev/null 2>&1; then
+			printf 'Unregistered autobrief discovery hook (user scope).\n'
+		else
+			printf '%s: note: could not unregister the autobrief hook (skipped).\n' "$PROG" >&2
+		fi
+	fi
+fi
