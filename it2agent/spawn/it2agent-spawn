@@ -334,8 +334,11 @@ as_esc() {
 
 # --- capture the user command (trailing args) NOW ----------------------------
 # We snapshot $@ into RUN_CMD before the isolation block, because that block
-# uses `set --` to assemble helper args and would otherwise clobber $@.
+# uses `set --` to assemble helper args and would otherwise clobber $@. We also
+# snapshot the FIRST token (the program name) unquoted into AGENT_CMD0 for the
+# preflight resolvability check below (bug: `command not found: claude`).
 RUN_CMD=""
+AGENT_CMD0="$1"
 for a in "$@"; do
 	if [ -z "$RUN_CMD" ]; then
 		RUN_CMD="$(shq "$a")"
@@ -560,8 +563,31 @@ esac
 # The boot path is a mktemp slug (/tmp/it2agent-boot.XXXXXX): no spaces/quotes,
 # safe to embed unquoted. Keep the inner free of single quotes so the outer
 # single-quote wrap (shq) stays clean.
-BOOT_INNER=". $BOOT; rm -f $BOOT; exec $LAUNCH_SHELL -l"
-LAUNCH_CMD="$LAUNCH_SHELL -lc $(shq "$BOOT_INNER")"
+#
+# INTERACTIVE login shell (`-ilc`, not `-lc`): the tab is born from the iTerm2
+# GUI process environment, where a non-interactive login shell sources
+# .zprofile/.zshenv but NOT .zshrc. Many setups add ~/.local/bin (where `claude`
+# and the it2agent CLIs live) to PATH only in .zshrc, so a non-interactive boot
+# runs the agent command with that dir off PATH → `command not found: claude`.
+# Forcing interactive (`-i`) sources .zshrc before the agent command runs, so the
+# user's full interactive PATH is in effect. The tab has a real TTY, so zle/rc
+# initialize cleanly. The trailing shell is `-il` for the same reason.
+BOOT_INNER=". $BOOT; rm -f $BOOT; exec $LAUNCH_SHELL -il"
+LAUNCH_CMD="$LAUNCH_SHELL -ilc $(shq "$BOOT_INNER")"
+
+# --- preflight: resolve the agent command in the SAME interactive login shell -
+# the tab will use, so we fail LOUDLY here instead of opening a doomed tab that
+# silently reports success while the agent command dies with `command not
+# found` (the caller then believes an agent is running when it is not). We check
+# only the program name (AGENT_CMD0); `command -v` resolves absolute paths,
+# PATH lookups, functions and builtins. stderr is silenced because a
+# non-interactive `-ilc` (no TTY here in the spawner) may emit cosmetic zle
+# warnings; the exit code is still faithful.
+if "$LAUNCH_SHELL" -ilc 'command -v -- "$0"' "$AGENT_CMD0" >/dev/null 2>&1; then
+	PREFLIGHT_OK=1
+else
+	PREFLIGHT_OK=0
+fi
 
 # --- assemble the AppleScript -------------------------------------------------
 # Create a tab in the current window (or a new window if none is open) whose
@@ -594,7 +620,8 @@ if [ "$DRYRUN" = "1" ]; then
 		printf '  isolation    : off (plain $PWD inheritance, = #10)\n'
 	fi
 	printf '  guide header : %s\n' "$([ "$NO_GUIDE" = 1 ] && echo 'off (--no-guide)' || echo 'on (run: it2agent help)')"
-	printf '  delivery     : the script below is written to a /tmp boot file; the tab is created with `command` = `%s -lc ". <file>; rm -f <file>; exec %s -l"` (launched directly, NOT typed into a shell — no zle race, #74)\n' "$LAUNCH_SHELL" "$LAUNCH_SHELL"
+	printf '  preflight    : agent command %s resolves in login shell? %s\n' "$(shq "$AGENT_CMD0")" "$([ "$PREFLIGHT_OK" = 1 ] && echo 'yes' || echo 'no — would ABORT (not run) outside --dry-run')"
+	printf '  delivery     : the script below is written to a /tmp boot file; the tab is created with `command` = `%s -ilc ". <file>; rm -f <file>; exec %s -il"` (interactive login so ~/.local/bin is on PATH; launched directly, NOT typed into a shell — no zle race, #74)\n' "$LAUNCH_SHELL" "$LAUNCH_SHELL"
 	if [ "$ISOLATION_ON" = "1" ]; then
 		printf '\n  worktree isolation plan (from it2agent-worktree):\n'
 		printf '%s\n' "$ISOLATION_PLAN" | sed 's/^/    /'
@@ -607,6 +634,13 @@ if [ "$DRYRUN" = "1" ]; then
 fi
 
 # --- execute ------------------------------------------------------------------
+# Honesty gate: refuse to open a doomed tab (and falsely report success) when the
+# agent command cannot be resolved in the login shell the tab will use.
+if [ "$PREFLIGHT_OK" != "1" ]; then
+	die "agent command '$AGENT_CMD0' not found in your login-shell PATH.
+Ensure its directory (e.g. ~/.local/bin) is added to PATH in a login-sourced file
+(.zprofile or .zshenv, not just .zshrc), or pass an absolute path to the command."
+fi
 command -v osascript >/dev/null 2>&1 || die "osascript not found (this wrapper requires macOS/iTerm2)"
 # Discard osascript's stdout (it echoes the created-tab reference); keep stderr
 # so real AppleScript/iTerm errors still surface.

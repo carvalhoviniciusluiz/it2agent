@@ -113,7 +113,10 @@ external broker**; the terminal is transport, not a router. A Python daemon brid
   Cockpit (`it2agent emit ccstatus`, flag `agent.native_status`).
 - **Spawn + isolation** — `it2agent spawn` opens a tab with a stamped identity; with
   `worktree_isolation` each agent gets its own git worktree, dynamic port(s), and optional
-  Docker/DB namespace.
+  Docker/DB namespace. The agent command runs in an **interactive login shell**, so your
+  interactive `PATH` (e.g. `~/.local/bin`, where `claude` and the it2agent wrappers live) is in
+  effect. If the command can't be resolved there, spawn **aborts with a clear error** instead of
+  opening a dead tab.
 - **MCP** — `it2agent mcp` exposes 9 tools (`spawn`, `assign`, `handoff`, `send_message`, `status`,
   `list_agents`, `team_tasks`, `read_messages`, `help`) over stdio JSON-RPC, backed by the daemon +
   broker.
