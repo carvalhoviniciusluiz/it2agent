@@ -190,6 +190,12 @@
                                     <action selector="newSessionWithSameProfile:" target="201" id="1304"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="New Sessions…" keyEquivalent="n" identifier="New Sessions" id="NwS-01-ns1">
+                                <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
+                                <connections>
+                                    <action selector="newSessionsBatch:" target="201" id="NwS-02-ns2"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="1199"/>
                             <menuItem title="Duplicate Window" identifier="Duplicate Window" id="9BQ-Nt-1uD">
                                 <modifierMask key="keyEquivalentModifierMask"/>
