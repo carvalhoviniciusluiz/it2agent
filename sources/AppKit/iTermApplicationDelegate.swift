@@ -241,3 +241,18 @@ extension iTermApplicationDelegate {
         CockpitWindowController.shared.showAndFocusSearch()
     }
 }
+
+@objc
+extension iTermApplicationDelegate {
+    // Opens the "New Sessions" batch-launch dialog (it2agent). Presented as a
+    // sheet over the current terminal window, whose cwd pre-fills the dialog.
+    @IBAction func newSessionsBatch(_ sender: Any?) {
+        let controller = iTermController.sharedInstance()
+        guard let terminal = controller?.keyTerminalWindow() ?? controller?.currentTerminal,
+              let parent = terminal.window else {
+            NSSound.beep()
+            return
+        }
+        NewSessionsPanel().present(over: parent)
+    }
+}
