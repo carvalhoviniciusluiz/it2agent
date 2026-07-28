@@ -293,12 +293,20 @@ The one part that needs a human is a **real Claude Code team plus killing the le
 
 ## Convention: where Claude Code config goes
 
-Any config it2agent needs Claude Code to pick up — hooks, env, MCP wiring — is **always** written to
-the active project's `<git-root>/.claude/settings.local.json`: per-project, machine-local, and
-gitignored. Never the committed `.claude/settings.json`, never global, unless you explicitly opt into
-a wider scope. Presence in a project *is* the per-project opt-in ("installed = enabled"), and
-install/uninstall are symmetric — uninstall removes only our entries. Full rationale:
+By **default**, any config it2agent needs Claude Code to pick up — hooks, env, MCP wiring — is written
+to the active project's `<git-root>/.claude/settings.local.json`: per-project, machine-local, and
+gitignored (never the committed `.claude/settings.json`). Presence in a project *is* the per-project
+opt-in ("installed = enabled"), and install/uninstall are symmetric — uninstall removes only our
+entries. Full rationale:
 [`it2agent/docs/claude-config-convention.md`](it2agent/docs/claude-config-convention.md).
+
+**One deliberate exception — the autobrief discovery hook is USER scope.** `it2agent install` registers
+it in `~/.claude/settings.json` (not a project file), with a portable bare-name command
+(`it2agent-autobrief-hook session-start`) resolved via the `~/.local/bin` wrapper. That is on purpose:
+discovery must fire for a fresh agent in **every** project, git worktree, and machine — a project-scoped
+hook is never materialized in a new `git worktree add` and does not travel to another checkout. The
+hook stays inert until `agent.autobrief` is on, so shipping it at user scope is safe; `--no-hook` opts
+out and `it2agent uninstall` removes it (leaving the flag as-is).
 
 ---
 
@@ -309,8 +317,9 @@ install/uninstall are symmetric — uninstall removes only our entries. Full rat
   bridge, review, janitor, cost, inbox, autobrief), the docs, and the test gates. This never modifies
   the terminal's source.
 - **`sources/`** — the iTerm2-based app. Fork-direct native edits are deliberately narrow: the
-  **AI-Agents settings pane** and a few small native fixes (for example, the vimdiff `/dev/null`
-  fix). These live only in this personal fork and are never submitted upstream.
+  **AI-Agents settings pane**, the **New Sessions** batch-launcher dialog (Shell menu, Opt+Cmd+N),
+  and a few small native fixes (for example, the vimdiff `/dev/null` fix). These live only in this
+  personal fork and are never submitted upstream.
 
 The umbrella front door — `it2agent <sub>` — forwards to the sibling `it2agent-<sub>` tool, so
 `it2agent help`, `it2agent brief`, `it2agent broker serve`, `it2agent-flag list`, etc. all work from a
