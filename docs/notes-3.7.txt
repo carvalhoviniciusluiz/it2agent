@@ -2464,3 +2464,12 @@ Bug Fixes:
   ping/health, these talk to a running broker and
   are not gated; they print the broker's JSON
   reply.
+- The iTerm2 menu gains a "Keep Mac Awake"
+  checkbox: while checked, it2agent holds an
+  activity assertion that prevents idle display
+  and system sleep (like `caffeinate -d`) so
+  long-running background agent work is not
+  interrupted. Unchecking releases it, as does
+  quitting it2agent (the OS drops it on abrupt
+  exit too). "Check for Updates…" is disabled —
+  this fork does not track the upstream repo.
