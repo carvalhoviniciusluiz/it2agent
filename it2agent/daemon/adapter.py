@@ -65,7 +65,23 @@ def build_spawn_customizations(plan):
     return customizations
 
 
-def build_launch_command(cwd: str, command: str) -> str:
+def resolve_login_shell() -> str:
+    """The user's login shell for spawned agents, sanitized.
+
+    Mirrors the it2agent-spawn (#142) resolution: prefer ``$SHELL``, fall back to
+    ``/bin/sh``, and refuse an odd path (only ``[A-Za-z0-9/._-]``) so the value is
+    always safe to embed in the launch command.
+    """
+    import os
+    import re
+
+    shell = os.environ.get("SHELL") or "/bin/sh"
+    if not re.fullmatch(r"[A-Za-z0-9/._-]+", shell):
+        return "/bin/sh"
+    return shell
+
+
+def build_launch_command(cwd: str, command: str, shell: str | None = None) -> str:
     """The program string to run as the spawned session (#85).
 
     iTerm2 IGNORES a profile's custom directory when a ``command`` override is
@@ -78,13 +94,24 @@ def build_launch_command(cwd: str, command: str) -> str:
     mirroring the AppleScript ``it2agent-spawn`` path. ``exec`` keeps the agent as
     the session's foreground process (no wrapper shell lingering). When ``cwd`` is
     empty the command is returned unchanged. Pure: no iterm2 import.
+
+    The wrapper is an INTERACTIVE login shell (``-ilc``, with the user's
+    ``$SHELL`` rather than ``/bin/sh``), matching the it2agent-spawn #142 fix: a
+    non-interactive login shell (``-lc``) sources .zprofile/.zshenv but NOT
+    .zshrc, and many setups add ``~/.local/bin`` (where ``it2agent`` and
+    ``claude`` live) to PATH only in .zshrc — so ``-lc`` spawned the agent with
+    that dir OFF PATH (``command not found: it2agent``). Interactive (``-i``)
+    sources .zshrc, so the spawned agent's PATH matches a normal tab. The tab has
+    a real TTY, so interactive init is fine. ``shell`` overrides the resolved
+    login shell (tests pass a deterministic one).
     """
     if not cwd:
         return command
     import shlex
 
+    launch_shell = shell if shell is not None else resolve_login_shell()
     inner = f"cd {shlex.quote(cwd)} && exec {command}"
-    return f"/bin/sh -lc {shlex.quote(inner)}"
+    return f"{launch_shell} -ilc {shlex.quote(inner)}"
 
 
 class DaemonAdapter:
