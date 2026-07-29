@@ -212,6 +212,44 @@ def _parse_spawn_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _register_spawned_agent(args, logger) -> None:
+    """Best-effort durable registration of a freshly spawned agent.
+
+    Mirrors the MCP ``spawn`` tool (``mcp/tools.py`` ``handle_spawn``), which the
+    CLI ``it2agent spawn`` path previously lacked: register the agent in the
+    broker ``agents`` table (keyed by the logical ``--id``) so ``list_agents`` /
+    ``status`` and name-based discovery see it right away instead of waiting for a
+    separately running daemon to notice the new tab. No ``--id`` or an unreachable
+    broker ⇒ no-op. Never raises; launching the tab is the primary action.
+    """
+    agent_id = getattr(args, "agent_id", "") or ""
+    if not agent_id:
+        return
+    try:
+        from bridge import connect_broker
+        from spawn import build_registration_op
+    except Exception as exc:  # noqa: BLE001 - helpers unavailable ⇒ skip
+        logger.info("spawn: broker registration helpers unavailable (%s)", exc)
+        return
+    client = connect_broker(logger)
+    if client is None:
+        logger.info("spawn: broker not reachable; agent '%s' not registered", agent_id)
+        return
+    op = build_registration_op(
+        agent_id, getattr(args, "role", "") or "", getattr(args, "task", "") or ""
+    )
+    try:
+        resp = client.request(op)
+        if isinstance(resp, dict) and resp.get("ok"):
+            logger.info("spawn: registered agent '%s' in broker registry", agent_id)
+        else:
+            logger.info(
+                "spawn: broker did not ack registration for '%s' (%r)", agent_id, resp
+            )
+    except Exception as exc:  # noqa: BLE001 - broker down must not fail spawn
+        logger.info("spawn: broker registration for '%s' skipped (%s)", agent_id, exc)
+
+
 def spawn_cli(argv: list[str]) -> int:
     import shlex
 
@@ -262,6 +300,11 @@ def spawn_cli(argv: list[str]) -> int:
             await adapter.spawn_agent(plan, command)
 
         iterm2.run_until_complete(_main)
+        # Parity with the MCP `spawn` tool: after the tab is open, best-effort
+        # register the agent in the durable broker registry so it is immediately
+        # discoverable by name (list_agents / status). The CLI spawn path lacked
+        # this, so CLI-spawned agents never showed up in the registry.
+        _register_spawned_agent(args, logger)
     except ImportError as exc:
         print(
             f"{PROG} spawn: the 'iterm2' Python package is required "

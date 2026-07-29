@@ -2446,3 +2446,12 @@ Bug Fixes:
   used a non-interactive /bin/sh that skipped
   .zshrc, so daemon-spawned agents hit
   "command not found: it2agent".
+- The CLI "it2agent spawn" now also registers the
+  new agent in the broker registry (keyed by its
+  --id), matching the MCP spawn tool. Previously
+  only the MCP path registered, so agents started
+  via the CLI never appeared in the registry and
+  could not be reached by name (list_agents /
+  status found nothing). Best-effort: no --id or
+  an unreachable broker just skips it; launching
+  the tab is unaffected.

@@ -157,5 +157,43 @@ class TestBuildSpawnPlan(unittest.TestCase):
         self.assertEqual(plan.variables, [])
 
 
+class TestBuildRegistrationOp(unittest.TestCase):
+    """The broker `register` op shared by the MCP spawn tool and the CLI spawn
+    path (keyed by the logical agent_id)."""
+
+    def test_minimal_op_id_only(self):
+        self.assertEqual(
+            spawn.build_registration_op("a1"),
+            {"op": "register", "session_id": "a1", "alive": True},
+        )
+
+    def test_role_and_task_included_when_present(self):
+        self.assertEqual(
+            spawn.build_registration_op("a1", "worker", "build"),
+            {
+                "op": "register",
+                "session_id": "a1",
+                "alive": True,
+                "role": "worker",
+                "task": "build",
+            },
+        )
+
+    def test_empty_role_task_omitted(self):
+        op = spawn.build_registration_op("a1", "", "")
+        self.assertNotIn("role", op)
+        self.assertNotIn("task", op)
+
+    def test_capabilities_included_only_when_not_none(self):
+        self.assertNotIn("capabilities", spawn.build_registration_op("a1"))
+        self.assertEqual(
+            spawn.build_registration_op("a1", capabilities=["git"])["capabilities"],
+            ["git"],
+        )
+
+    def test_alive_override(self):
+        self.assertFalse(spawn.build_registration_op("a1", alive=False)["alive"])
+
+
 if __name__ == "__main__":
     unittest.main()
