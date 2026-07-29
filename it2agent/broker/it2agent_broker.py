@@ -13,8 +13,9 @@ Feature-flag gate: like every it2agent capability, the broker is off by
 default. The **server** starts only when ``agent.broker`` is ON (checked via
 the #11 flag helper). If the flag is OFF/absent it prints a clear message and
 exits 0. Bypass for local testing with ``--no-gate`` or ``IT2AGENT_FORCE=1`` —
-mirrors the daemon gate exactly. Client subcommands (``ping``/``health``) talk
-to an already-running server and are **not** gated.
+mirrors the daemon gate exactly. Client subcommands (``ping``/``health``/
+``send``/``poll``/``prune``/``vacuum``) talk to an already-running server and are
+**not** gated.
 
 Architecture (testability): the real logic lives in the pure modules
 ``schema`` (sqlite), ``protocol`` (wire), ``dispatch`` (op registry), and
@@ -159,7 +160,52 @@ def _build_parser() -> argparse.ArgumentParser:
     path.add_argument("--sock", default=None)
     path.add_argument("--db", default=None)
 
+    # Messaging client ops (#agent-comms): a CLI path to the durable mailbox,
+    # parallel to the MCP send_message/read_messages tools, so an agent that has
+    # it2agent on PATH but no MCP wired can still talk to peers.
+    send = sub.add_parser("send", help="send a durable message to an agent's mailbox.")
+    send.add_argument("--to", required=True, help="recipient agent id or role.")
+    send.add_argument("--from", dest="sender", required=True, help="sender agent id.")
+    send.add_argument("--body", required=True, help="message text.")
+    send.add_argument(
+        "--key",
+        default=None,
+        help="optional idempotency key (a repeat send with the same recipient+key "
+        "is deduped, not re-inserted).",
+    )
+    send.add_argument("--sock", default=None, help="unix socket path override.")
+    send.add_argument("-v", "--verbose", action="store_true", help="debug logging.")
+
+    poll = sub.add_parser(
+        "poll", help="read (non-destructively) an agent's un-acked messages."
+    )
+    poll.add_argument("--agent", required=True, help="agent id whose mailbox to read.")
+    poll.add_argument(
+        "--since",
+        type=int,
+        default=None,
+        help="only messages with id greater than this (offset read).",
+    )
+    poll.add_argument("--sock", default=None, help="unix socket path override.")
+    poll.add_argument("-v", "--verbose", action="store_true", help="debug logging.")
+
     return parser
+
+
+def _build_send_request(args: argparse.Namespace) -> dict:
+    """Pure ``args`` → broker ``send`` op (``{op, to, from, body, key?}``)."""
+    request: dict = {"op": "send", "to": args.to, "from": args.sender, "body": args.body}
+    if getattr(args, "key", None):
+        request["key"] = args.key
+    return request
+
+
+def _build_poll_request(args: argparse.Namespace) -> dict:
+    """Pure ``args`` → broker ``poll`` op (``{op, agent, since?}``)."""
+    request: dict = {"op": "poll", "agent": args.agent}
+    if getattr(args, "since", None) is not None:
+        request["since"] = args.since
+    return request
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
@@ -208,6 +254,14 @@ def _cmd_prune(args: argparse.Namespace) -> int:
     return _cmd_client("prune", args, request=request)
 
 
+def _cmd_send(args: argparse.Namespace) -> int:
+    return _cmd_client("send", args, request=_build_send_request(args))
+
+
+def _cmd_poll(args: argparse.Namespace) -> int:
+    return _cmd_client("poll", args, request=_build_poll_request(args))
+
+
 def _cmd_paths(args: argparse.Namespace) -> int:
     print(f"db:   {_resolve_db(args.db)}")
     print(f"sock: {_resolve_sock(args.sock)}")
@@ -229,6 +283,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_prune(args)
     if command == "vacuum":
         return _cmd_client("vacuum", args)
+    if command == "send":
+        return _cmd_send(args)
+    if command == "poll":
+        return _cmd_poll(args)
     if command == "paths":
         return _cmd_paths(args)
     parser.print_help(sys.stderr)

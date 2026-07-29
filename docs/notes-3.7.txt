@@ -2455,3 +2455,12 @@ Bug Fixes:
   status found nothing). Best-effort: no --id or
   an unreachable broker just skips it; launching
   the tab is unaffected.
+- New "it2agent broker send" / "it2agent broker
+  poll" give a CLI path to the durable mailbox,
+  parallel to the MCP send_message /
+  read_messages tools. An agent that has it2agent
+  on PATH but no MCP wired can now message peers
+  and read its inbox from the shell. Like
+  ping/health, these talk to a running broker and
+  are not gated; they print the broker's JSON
+  reply.
