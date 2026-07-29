@@ -2437,3 +2437,12 @@ Bug Fixes:
   a -suite dev build) is now silent: the native
   status just skips that update, as it already
   did for the background-task count.
+- it2agent daemon spawn now launches the agent
+  in an interactive login shell (the user's
+  $SHELL -ilc, not /bin/sh -lc), so ~/.local/bin
+  (where it2agent and claude live) is on PATH. It
+  matches the it2agent-spawn fix: the shell path
+  was fixed earlier, but the daemon spawn still
+  used a non-interactive /bin/sh that skipped
+  .zshrc, so daemon-spawned agents hit
+  "command not found: it2agent".

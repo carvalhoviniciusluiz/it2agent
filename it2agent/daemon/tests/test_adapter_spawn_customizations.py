@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -89,17 +90,30 @@ class TestBuildLaunchCommand(unittest.TestCase):
     def test_no_cwd_returns_command_unchanged(self):
         self.assertEqual(adapter.build_launch_command("", "/bin/zsh"), "/bin/zsh")
 
-    def test_cwd_wraps_with_cd_and_exec(self):
-        out = adapter.build_launch_command("/work/proj", "claude --resume")
-        self.assertTrue(out.startswith("/bin/sh -lc "))
+    def test_cwd_wraps_with_cd_and_exec_interactive_login(self):
+        # #142-parity: the wrapper is an INTERACTIVE login shell (-ilc) using the
+        # given $SHELL, so .zshrc (hence ~/.local/bin) is sourced for the agent.
+        out = adapter.build_launch_command(
+            "/work/proj", "claude --resume", shell="/bin/zsh"
+        )
+        self.assertTrue(out.startswith("/bin/zsh -ilc "))
         self.assertIn("cd ", out)
         self.assertIn("exec claude --resume", out)
 
+    def test_default_shell_is_interactive_login(self):
+        # Without an explicit shell it resolves $SHELL and still uses -ilc, never
+        # the old non-interactive -lc that left ~/.local/bin off PATH.
+        out = adapter.build_launch_command("/work/proj", "pwd")
+        self.assertIn(" -ilc ", out)
+        self.assertNotIn(" -lc ", out)
+
     def test_runs_in_cwd_end_to_end(self):
         # `pwd` stands in for the agent; the launch string must print cwd.
-        # `sh -c "$launch"` emulates iTerm tokenizing `command` into argv.
+        # `sh -c "$launch"` emulates iTerm tokenizing `command` into argv. Pin the
+        # wrapper shell to /bin/sh so the end-to-end stays hermetic (independent of
+        # the operator's real $SHELL / .zshrc).
         real = os.path.realpath(tempfile.mkdtemp())
-        launch = adapter.build_launch_command(real, "pwd")
+        launch = adapter.build_launch_command(real, "pwd", shell="/bin/sh")
         out = subprocess.run(
             ["/bin/sh", "-c", launch], capture_output=True, text=True
         ).stdout.strip()
@@ -107,11 +121,29 @@ class TestBuildLaunchCommand(unittest.TestCase):
 
     def test_cwd_with_spaces_is_quoted(self):
         real = os.path.realpath(tempfile.mkdtemp(prefix="has space "))
-        launch = adapter.build_launch_command(real, "pwd")
+        launch = adapter.build_launch_command(real, "pwd", shell="/bin/sh")
         out = subprocess.run(
             ["/bin/sh", "-c", launch], capture_output=True, text=True
         ).stdout.strip()
         self.assertEqual(os.path.realpath(out), real)
+
+
+class TestResolveLoginShell(unittest.TestCase):
+    """resolve_login_shell mirrors it2agent-spawn #142: prefer $SHELL, sanitize,
+    fall back to /bin/sh."""
+
+    def test_prefers_shell_env(self):
+        with mock.patch.dict(os.environ, {"SHELL": "/opt/homebrew/bin/zsh"}):
+            self.assertEqual(adapter.resolve_login_shell(), "/opt/homebrew/bin/zsh")
+
+    def test_unset_falls_back_to_bin_sh(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(adapter.resolve_login_shell(), "/bin/sh")
+
+    def test_odd_path_refused(self):
+        # A $SHELL with shell-unsafe characters is refused for /bin/sh.
+        with mock.patch.dict(os.environ, {"SHELL": "/bin/sh; rm -rf ~"}):
+            self.assertEqual(adapter.resolve_login_shell(), "/bin/sh")
 
 
 if __name__ == "__main__":
