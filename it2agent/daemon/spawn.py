@@ -81,6 +81,31 @@ class SpawnPlan:
     tagged: bool = False
 
 
+def build_registration_op(
+    agent_id: str,
+    role: str = "",
+    task: str = "",
+    capabilities: list[str] | None = None,
+    alive: bool = True,
+) -> dict:
+    """Broker ``register`` op for a freshly spawned agent, keyed by the logical
+    ``agent_id`` (the durable ``agents`` table's key).
+
+    Shared by BOTH spawn paths so they register identically: the MCP ``spawn``
+    tool (``mcp/tools.py`` :func:`handle_spawn`) and the CLI ``it2agent spawn``
+    (:func:`it2agent_daemon.spawn_cli`). ``role``/``task``/``capabilities`` are
+    included only when provided, matching the pre-existing MCP behavior.
+    """
+    op: dict = {"op": "register", "session_id": agent_id, "alive": alive}
+    if role:
+        op["role"] = role
+    if task:
+        op["task"] = task
+    if capabilities is not None:
+        op["capabilities"] = capabilities
+    return op
+
+
 def resolve_cwd(
     spawner_cwd: str,
     *,

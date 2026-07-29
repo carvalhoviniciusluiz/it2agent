@@ -56,7 +56,12 @@ _DAEMON_DIR = Path(__file__).resolve().parent.parent / "daemon"
 if str(_DAEMON_DIR) not in sys.path:
     sys.path.insert(0, str(_DAEMON_DIR))
 
-from spawn import SpawnPlan, SpawnPlanError, build_spawn_plan  # type: ignore  # noqa: E402
+from spawn import (  # type: ignore  # noqa: E402
+    SpawnPlan,
+    SpawnPlanError,
+    build_registration_op,
+    build_spawn_plan,
+)
 
 # The consolidated agent capability guide (#56) is the single source of truth.
 # The MCP surface exposes it WITHOUT duplicating a copy: the ``help`` tool (and
@@ -232,18 +237,11 @@ def handle_spawn(arguments: dict, deps: Deps) -> dict:
     registered = None
     register_error = None
     if agent_id:
-        op = {"op": "register", "session_id": agent_id, "alive": True}
-        if role:
-            op["role"] = role
-        if task:
-            op["task"] = task
-        caps = None
         try:
             caps = _optional_str_list(arguments, "capabilities")
         except ValueError:
             caps = None
-        if caps is not None:
-            op["capabilities"] = caps
+        op = build_registration_op(agent_id, role, task, capabilities=caps)
         try:
             resp = deps.broker.request(op)
             registered = bool(isinstance(resp, dict) and resp.get("ok"))
