@@ -138,6 +138,7 @@
 #include <libproc.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#import <IOKit/pwr_mgt/IOPMLib.h>
 
 @import Sparkle;
 
@@ -239,11 +240,14 @@ static BOOL hasBecomeActive = NO;
     // NSProcessInfo-provided object to make the system think we're doing something important.
     id<NSObject> _appNapStoppingActivity;
 
-    // "Keep Mac Awake" menu toggle (it2agent): while set, we hold an
-    // NSProcessInfo activity assertion that prevents display/idle sleep so
-    // long-running background agent work is not interrupted. Released on toggle
-    // off and on quit; the OS also drops it automatically if the app dies.
-    id<NSObject> _keepAwakeActivityToken;
+    // "Keep Mac Awake" menu toggle (it2agent): while active, we hold an IOKit
+    // power assertion (kIOPMAssertionTypePreventUserIdleDisplaySleep) — exactly
+    // what `caffeinate -d` does — so idle display/system sleep is prevented and
+    // long-running background agent work is not interrupted. (An earlier
+    // NSProcessInfo activity proved too weak — the Mac still idle-slept.)
+    // Released on toggle off and on quit; powerd also drops it if the app dies.
+    IOPMAssertionID _keepAwakeAssertionID;
+    BOOL _keepAwakeAssertionActive;
 
     BOOL _sparkleRestarting;  // Is Sparkle about to restart the app?
 
@@ -436,7 +440,7 @@ static NSModalResponse iTermCompareRenderingRunModal(id self, SEL _cmd) {
     // it2agent: "Keep Mac Awake" is a checkbox whose checkmark reflects whether
     // we currently hold the prevent-sleep activity assertion.
     if (action == @selector(toggleKeepMacAwake:)) {
-        menuItem.state = _keepAwakeActivityToken ? NSControlStateValueOn : NSControlStateValueOff;
+        menuItem.state = _keepAwakeAssertionActive ? NSControlStateValueOn : NSControlStateValueOff;
         return YES;
     }
     if (action == @selector(newSessionInTabAtIndex:) ||
@@ -1102,9 +1106,9 @@ static NSModalResponse iTermCompareRenderingRunModal(id self, SEL _cmd) {
     RLog(@"applicationWillTerminate called");
     // it2agent: drop the "Keep Mac Awake" assertion on quit so the Mac is not
     // left awake after it2agent exits (the OS drops it on abrupt death too).
-    if (_keepAwakeActivityToken) {
-        [[NSProcessInfo processInfo] endActivity:_keepAwakeActivityToken];
-        _keepAwakeActivityToken = nil;
+    if (_keepAwakeAssertionActive) {
+        IOPMAssertionRelease(_keepAwakeAssertionID);
+        _keepAwakeAssertionActive = NO;
     }
     [iTermController releaseSharedInstance];
     [[iTermModifierRemapper sharedInstance] setRemapModifiers:NO];
@@ -2456,17 +2460,26 @@ static iTermKeyEventReplayer *gReplayer;
 // the app drops it automatically (the Mac is never left awake without it2agent
 // running); we also release it explicitly in applicationWillTerminate:.
 - (IBAction)toggleKeepMacAwake:(id)sender {
-    if (_keepAwakeActivityToken) {
-        [[NSProcessInfo processInfo] endActivity:_keepAwakeActivityToken];
-        _keepAwakeActivityToken = nil;
-        DLog(@"Keep Mac Awake: OFF (released activity)");
+    if (_keepAwakeAssertionActive) {
+        IOPMAssertionRelease(_keepAwakeAssertionID);
+        _keepAwakeAssertionID = kIOPMNullAssertionID;
+        _keepAwakeAssertionActive = NO;
+        DLog(@"Keep Mac Awake: OFF (released power assertion)");
     } else {
-        _keepAwakeActivityToken =
-            [[NSProcessInfo processInfo] beginActivityWithOptions:(NSActivityIdleDisplaySleepDisabled |
-                                                                   NSActivityIdleSystemSleepDisabled |
-                                                                   NSActivityUserInitiated)
-                                                           reason:@"it2agent: Keep Mac Awake"];
-        DLog(@"Keep Mac Awake: ON (holding prevent-sleep activity)");
+        // Identical to `caffeinate -d`: a real IOKit PreventUserIdleDisplaySleep
+        // power assertion. (NSProcessInfo activities were too weak — the Mac
+        // still idle-slept with the box checked.)
+        const IOReturn rc =
+            IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep,
+                                        kIOPMAssertionLevelOn,
+                                        CFSTR("it2agent: Keep Mac Awake"),
+                                        &_keepAwakeAssertionID);
+        _keepAwakeAssertionActive = (rc == kIOReturnSuccess);
+        if (_keepAwakeAssertionActive) {
+            DLog(@"Keep Mac Awake: ON (holding PreventUserIdleDisplaySleep assertion)");
+        } else {
+            RLog(@"Keep Mac Awake: failed to create power assertion (IOReturn %d)", rc);
+        }
     }
 }
 

@@ -2466,8 +2466,8 @@ Bug Fixes:
   reply.
 - The iTerm2 menu gains a "Keep Mac Awake"
   checkbox: while checked, it2agent holds an
-  activity assertion that prevents idle display
-  and system sleep (like `caffeinate -d`) so
+  IOKit power assertion (like `caffeinate -d`)
+  that prevents idle display/system sleep so
   long-running background agent work is not
   interrupted. Unchecking releases it, as does
   quitting it2agent (the OS drops it on abrupt
