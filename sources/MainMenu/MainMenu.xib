@@ -33,6 +33,12 @@
                                     <action selector="pairCompanionDevice:" target="201" id="Cmp-n0-Ac1"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Keep Mac Awake" identifier="Keep Mac Awake" id="KmA-n0-De1">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="toggleKeepMacAwake:" target="201" id="KmA-n0-Ac1"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="Dxk-DH-qzi">
                                 <modifierMask key="keyEquivalentModifierMask" command="YES"/>
                             </menuItem>

@@ -239,6 +239,12 @@ static BOOL hasBecomeActive = NO;
     // NSProcessInfo-provided object to make the system think we're doing something important.
     id<NSObject> _appNapStoppingActivity;
 
+    // "Keep Mac Awake" menu toggle (it2agent): while set, we hold an
+    // NSProcessInfo activity assertion that prevents display/idle sleep so
+    // long-running background agent work is not interrupted. Released on toggle
+    // off and on quit; the OS also drops it automatically if the app dies.
+    id<NSObject> _keepAwakeActivityToken;
+
     BOOL _sparkleRestarting;  // Is Sparkle about to restart the app?
 
     BOOL _orphansAdopted;  // Have orphan servers been adopted?
@@ -422,6 +428,17 @@ static NSModalResponse iTermCompareRenderingRunModal(id self, SEL _cmd) {
 
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
     const SEL action = [menuItem action];
+    // it2agent: this fork does not track the upstream repo, so the Sparkle
+    // "Check for Updates…" command is intentionally disabled (greyed out).
+    if (action == @selector(checkForUpdatesFromMenu:)) {
+        return NO;
+    }
+    // it2agent: "Keep Mac Awake" is a checkbox whose checkmark reflects whether
+    // we currently hold the prevent-sleep activity assertion.
+    if (action == @selector(toggleKeepMacAwake:)) {
+        menuItem.state = _keepAwakeActivityToken ? NSControlStateValueOn : NSControlStateValueOff;
+        return YES;
+    }
     if (action == @selector(newSessionInTabAtIndex:) ||
         action == @selector(newSession:) ||
         action == @selector(newSessionWithSameProfile:)) {
@@ -1083,6 +1100,12 @@ static NSModalResponse iTermCompareRenderingRunModal(id self, SEL _cmd) {
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification {
     RLog(@"applicationWillTerminate called");
+    // it2agent: drop the "Keep Mac Awake" assertion on quit so the Mac is not
+    // left awake after it2agent exits (the OS drops it on abrupt death too).
+    if (_keepAwakeActivityToken) {
+        [[NSProcessInfo processInfo] endActivity:_keepAwakeActivityToken];
+        _keepAwakeActivityToken = nil;
+    }
     [iTermController releaseSharedInstance];
     [[iTermModifierRemapper sharedInstance] setRemapModifiers:NO];
     DLog(@"applicationWillTerminate returning");
@@ -2424,6 +2447,27 @@ static iTermKeyEventReplayer *gReplayer;
 
 - (IBAction)checkForUpdatesFromMenu:(id)sender {
     [suUpdater checkForUpdates:(sender)];
+}
+
+// it2agent: "Keep Mac Awake" checkbox. Toggling ON holds an NSProcessInfo
+// activity that disables idle display + system sleep (equivalent to
+// `caffeinate -d`) so background agent work is not interrupted; toggling OFF
+// releases it. The assertion is bound to this process, so quitting or crashing
+// the app drops it automatically (the Mac is never left awake without it2agent
+// running); we also release it explicitly in applicationWillTerminate:.
+- (IBAction)toggleKeepMacAwake:(id)sender {
+    if (_keepAwakeActivityToken) {
+        [[NSProcessInfo processInfo] endActivity:_keepAwakeActivityToken];
+        _keepAwakeActivityToken = nil;
+        DLog(@"Keep Mac Awake: OFF (released activity)");
+    } else {
+        _keepAwakeActivityToken =
+            [[NSProcessInfo processInfo] beginActivityWithOptions:(NSActivityIdleDisplaySleepDisabled |
+                                                                   NSActivityIdleSystemSleepDisabled |
+                                                                   NSActivityUserInitiated)
+                                                           reason:@"it2agent: Keep Mac Awake"];
+        DLog(@"Keep Mac Awake: ON (holding prevent-sleep activity)");
+    }
 }
 
 // Depth-first search for the menu item wired to a given action, so a
